@@ -1,0 +1,120 @@
+
+# services:
+#   mcp-server:
+#     build:
+#       context: .
+#       dockerfile: Dockerfile.server
+#     container_name: mcp-server
+#     ports:
+#       - "8000:8000"
+#     environment:
+#       - SERPER_API_KEY=${SERPER_API_KEY}
+#     networks:
+#       - rag-net
+#     volumes:
+#       - ./mcp_server_data:/app/data    # optional persistence if needed
+
+#   backend:
+#     build:
+#       context: .
+#       dockerfile: Dockerfile.backend
+#     container_name: rag-backend
+#     ports:
+#       - "8001:8001"
+#     environment:
+#       - MCP_URL=http://mcp-server:8000/mcp
+#       - SERPER_API_KEY=${SERPER_API_KEY}
+#     depends_on:
+#       - mcp-server
+#     networks:
+#       - rag-net
+#     volumes:
+#       - ./uploaded_docs:/app/uploaded_docs  # optional persistence
+
+
+
+#   streamlit:
+#       build:
+#         context: .
+#         dockerfile: Dockerfile.streamlit
+#       container_name: rag-streamlit
+#       ports:
+#         - "8501:8501"
+#       depends_on:
+#         - backend
+#       networks:
+#         - rag-net
+
+# networks:
+#   rag-net:
+#     driver: bridge
+
+
+services:
+  mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    container_name: mcp-server
+    ports:
+      - "8000:8000"
+    environment:
+      - SERPER_API_KEY=${SERPER_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    networks:
+      - rag-net
+    # Share the persistent ChromaDB with backend
+    volumes:
+      - ./chroma_db:/app/chroma_db
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('localhost',8000)); s.close()"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: rag-backend
+    ports:
+      - "8001:8001"
+    environment:
+      - MCP_URL=http://mcp-server:8000/mcp
+      - SERPER_API_KEY=${SERPER_API_KEY}
+    depends_on:
+      mcp-server:
+        condition: service_healthy
+    networks:
+      - rag-net
+    volumes:
+      - ./uploaded_docs:/app/uploaded_docs     # where uploads land
+      - ./chroma_db:/app/chroma_db             # same DB as mcp-server
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('localhost',8001)); s.close()"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit
+    container_name: rag-streamlit
+    ports:
+      - "8501:8501"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - rag-net
+    environment:
+      # optional: your UI auto-detects rag-backend by DNS, but keeping this is fine
+      - API_URL=http://rag-backend:8001
+    restart: unless-stopped
+
+networks:
+  rag-net:
+    driver: bridge
