@@ -15,3 +15,5 @@ It uses **Streamlit** for the UI, a **FastAPI** backend, an **MCP** (Model Conte
   - `web_search` → Serper.dev fallback (if no doc hits)
 
 ---
+
+![Architecture Diagram](./architechture_diag/Arch_diagram.png)
